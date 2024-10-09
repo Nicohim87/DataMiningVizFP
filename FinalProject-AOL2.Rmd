@@ -1,0 +1,205 @@
+---
+title: "FinalProject"
+author: "Nico Himawan"
+date: "2024-05-29"
+output: html_document
+---
+
+```{r}
+setwd("D:/BINUS/Semester4/DataMiningVisualization/FinalProject")
+df <- read.csv('Crime_Data_from_2020_to_Present.csv')
+head(df)
+```
+
+```{r}
+df <- df[, !(names(df) %in% c('Crm.Cd.2', 'Crm.Cd.3', 'Crm.Cd.4', 'Cross.Street'))]
+df <- df[!(is.na(df$Weapon.Used.Cd) | is.na(df$Weapon.Desc)),]
+dim(df)
+```
+
+
+```{r}
+library(plotly)
+library(dplyr)
+library(ggplot2)
+library(sf)
+```
+```{r}
+get_mode <- function(v) {
+  uniq_vals <- unique(v)
+  uniq_vals[which.max(tabulate(match(v, uniq_vals)))]
+}
+```
+
+```{r}
+df$TIME.OCC <- as.numeric(df$TIME.OCC)
+df[['Time.h']] = ((df$TIME.OCC - df$TIME.OCC %% 100) / 100) %% 24
+```
+
+
+```{r}
+loc = df[df$LAT != 0,c('LAT', 'LON')]
+gjson <-"./los-angeles-ca_.geojson"
+border <- st_read(gjson)
+
+ggplot() +
+  geom_sf(data = border) +
+  geom_point(data=loc, aes(x=LON, y=LAT), size=0.1, alpha=0.025, color='red') + 
+  geom_sf(data = border, fill=NA) +
+  
+  theme_minimal() +
+  labs(title = "Map of Crime Locations in Los Angeles", x="Latitude", y="Longitude")
+```
+
+```{r}
+
+df <- df %>%
+  mutate(Vict.Age = na_if(Vict.Age, 0)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -1)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -2)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -4))
+           
+victim.age <- df %>%
+  group_by(Vict.Age) %>%
+  summarize(count = n())
+
+fig <- plot_ly(x = ~df$Vict.Age, type = "histogram")
+fig <- fig %>% layout(title = 'Victim Age', xaxis=list(title='Victim Age'))
+        
+fig
+```
+
+```{r}
+df[["weapon.generalized"]] <- NA
+df$weapon.generalized[df$Weapon.Used.Cd >= 100 & df$Weapon.Used.Cd < 200] <- "Firearm"
+df$weapon.generalized[df$Weapon.Used.Cd >= 200 & df$Weapon.Used.Cd < 300] <- "Sharp Object"
+df$weapon.generalized[df$Weapon.Used.Cd >= 300 & df$Weapon.Used.Cd < 400] <- "Blunt Object"
+df$weapon.generalized[df$Weapon.Used.Cd >= 400 & df$Weapon.Used.Cd < 500] <- "Physical"
+df$weapon.generalized[df$Weapon.Used.Cd >= 500 & df$Weapon.Used.Cd < 600] <- "Other/Unknown Weapon"
+df$weapon.generalized[df$Weapon.Used.Cd == 511] <- "Treat"
+df$weapon.generalized[df$Weapon.Used.Cd == 501] <- "Treat"
+
+df$weapon.generalized[df$Weapon.Used.Cd == 515] <- "Physical"
+```
+
+```{r}
+crm = read.csv('categories.csv', sep=';')
+```
+
+```{r}
+crm <- crm[c('Crm.Cd', 'Crm.Category')]
+df <- df%>%
+  left_join(crm, by="Crm.Cd")
+
+crime <- df %>%
+  group_by(Crm.Category) %>%
+  summarize(count = n(), .groups='drop')
+colors <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#ff0000", "#00ff00", "#000", "#f3f3fd")
+fig <- plot_ly(crime, labels=~Crm.Category, values=~count, type='pie', marker = list(colors = colors)) %>%
+  layout(title = "Distribution of Crime Categories")
+fig
+```
+
+```{r}
+df$Vict.Sex <- ifelse(df$Vict.Sex == '', get_mode(df$Vict.Sex), df$Vict.Sex)
+df <- df %>%
+  mutate(Vict.Sex = recode(Vict.Sex,
+                           "M" = "Male",
+                           "F" = "Female",
+                           "H" = "Others",
+                           "X" = "Others"
+                           )) %>%
+  
+  mutate(across(c(1:3), ifelse(is.na(.x), ~ mean(.x, na.rm = TRUE), .x)))
+
+victim.sex <- df %>%
+  group_by(Vict.Sex) %>%
+  summarize(count = n())
+
+fig <- plot_ly(victim.sex, labels=~Vict.Sex, values=~count, type='pie')
+fig <- fig %>% layout(title = 'Victim Sex',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+```
+
+```{r}
+weapon <- df %>%
+  group_by(weapon.generalized)%>%
+  summarize(total = n(), .groups="drop")
+weapon_used <- df %>%
+  group_by(weapon.generalized, Vict.Sex) %>%
+  summarize(count = n(), .groups="drop") %>%
+  left_join(weapon, by="weapon.generalized") %>%
+  mutate(perc = count/total*100)
+```
+
+```{r}
+fig <- plot_ly(weapon_used, x=~weapon.generalized, y=~perc, color=~Vict.Sex, type='bar') %>%
+  layout(
+    title = "Relation Between Used Weapon and Victim Gender",
+    xaxis = list(title='Weapon Used'), 
+    yaxis = list(title = 'Percentage'),
+    barmode="group"
+  )
+
+fig
+```
+
+```{r}
+count.by.time <- df %>%
+  group_by(Time.h) %>%
+  summarize(total = n(), .groups="drop")
+
+time.occurred <- df %>%
+  group_by(weapon.generalized, Time.h) %>%
+  summarize(count = n(), .groups='drop') %>%
+  filter(weapon.generalized != 'Other/Unknown Weapon') %>%
+  left_join(count.by.time, by="Time.h") %>%
+  mutate(perc = count/total*100)
+
+fig<-plot_ly(time.occurred, x = ~Time.h, y=~perc , color=~weapon.generalized, type="scatter", mode="lines") %>%
+  layout(title="Percentage of Used Weapon over time", xaxis = list(title="Time in Hours"), yaxis = list(title="Percentage"))
+fig
+```
+
+```{r}
+color.def <- c("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22")
+
+vs <- df %>%
+  group_by(Vict.Sex) %>%
+  summarize(total=n(), .groups="drop")
+
+dist <- df %>%
+  group_by(Time.h, Vict.Sex) %>%
+  summarize(count=n(), .groups="drop") %>%
+  left_join(vs, by="Vict.Sex") %>%
+  mutate(perc = count/total*100)
+
+fig <- plot_ly(dist, x=~Time.h,y=~perc, color=~Vict.Sex, colors = color.def, type="scatter", mode="line") %>%
+  layout(barmode = "overlay",
+         title = "Distribution of time by Victim Sex",
+         xaxis = list(title = "Time in hour"),
+         yaxis = list(title="Percentage")
+  )
+
+fig
+```
+
+
+```{r}
+desc <- df %>%
+  group_by(weapon.generalized, Crm.Category) %>%
+  summarize(count = log(n()), .groups = 'drop') %>%
+  filter(weapon.generalized != 'Other/Unknown Weapon')
+plt <- plot_ly(desc, x=~weapon.generalized, y=~Crm.Category, z=~count ,type="heatmap") %>%
+  layout(
+    title="Heatmap of Weapon and Criminal Category (Natural Log Transformed)",
+    xaxis=list(title="Weapon Category"),
+    yaxis=list(title="Criminal Category"),
+    showlegend=FALSE
+         )
+plt
+```
+

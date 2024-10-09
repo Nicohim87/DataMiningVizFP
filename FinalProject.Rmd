@@ -1,0 +1,201 @@
+---
+title: "FinalProject"
+author: "Nico Himawan"
+date: "2024-05-29"
+output: html_document
+---
+
+```{r}
+setwd("D:/BINUS/Semester4/DataMiningVisualization/FinalProject")
+df <- read.csv('Crime_Data_from_2020_to_Present.csv')
+head(df)
+```
+
+```{r}
+df <- df[, !(names(df) %in% c('Crm.Cd.2', 'Crm.Cd.3', 'Crm.Cd.4', 'Cross.Street'))]
+df <- df[!(is.na(df$Weapon.Used.Cd) | is.na(df$Weapon.Desc)),]
+dim(df)
+```
+
+```{r}
+colSums(is.na(df))
+```
+
+
+```{r}
+library(plotly)
+library(dplyr)
+```
+```{r}
+get_mode <- function(v) {
+  uniq_vals <- unique(v)
+  uniq_vals[which.max(tabulate(match(v, uniq_vals)))]
+}
+```
+
+
+```{r}
+df$Vict.Sex <- ifelse(df$Vict.Sex == '', get_mode(df$Vict.Sex), df$Vict.Sex)
+df <- df %>%
+  mutate(Vict.Sex = recode(Vict.Sex,
+                           "M" = "Male",
+                           "F" = "Female",
+                           "H" = "Others",
+                           "X" = "Others"
+                           ))
+victim.sex <- df %>%
+  group_by(Vict.Sex) %>%
+  summarize(count = n())
+
+print(victim.sex)
+```
+
+```{r}
+fig <- plot_ly(victim.sex, labels=~Vict.Sex, values=~count, type='pie')
+fig <- fig %>% layout(title = 'Victim Sex',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+```
+
+```{r}
+
+df <- df %>%
+  mutate(Vict.Age = na_if(Vict.Age, 0)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -1)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -2)) %>%
+  mutate(Vict.Age = na_if(Vict.Age, -4))
+           
+victim.age <- df %>%
+  group_by(Vict.Age) %>%
+  summarize(count = n())
+
+print(victim.age)
+```
+
+```{r}
+fig <- plot_ly(x = ~df$Vict.Age, type = "histogram")
+fig <- fig %>% layout(title = 'Victim Age',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+```
+
+```{r}
+crime.desc <- df %>%
+  group_by(Crm.Cd.Desc) %>%
+  summarize(count = n())
+
+crime.desc <- crime.desc %>%
+  mutate(Crm.Cd.Desc = recode(Crm.Cd.Desc,
+                              'OTHER ASSAULT' = 'UNSPECIFIED'
+                              ))
+
+crime.desc <- crime.desc %>%
+  arrange(desc(count))
+
+first.amount <- 15
+
+crime.desc.other = crime.desc[-(1:first.amount),]
+
+crime.desc.first = crime.desc[1:first.amount,]
+
+crime.desc$Crm.Cd.Desc[!crime.desc$Crm.Cd.Desc %in% crime.desc.first$Crm.Cd.Desc] <- "OTHER"
+```
+
+```{r}
+fig <- plot_ly(crime.desc, y=~Crm.Cd.Desc, x=~count, type='bar')
+fig <- fig %>% layout(title = paste('Crime descriptions (Top ', paste(first.amount,' results)')), yaxis = list(title = "", showticklabels = FALSE))
+
+fig
+```
+Hover on the bar to display the label
+
+```{r}
+fig <- plot_ly(crime.desc.other[(1:20),], y=~Crm.Cd.Desc, x=~count, type='bar')
+fig <- fig %>% layout(title = 'Crime descriptions(Next 20 highest results)', yaxis = list(title = "", showticklabels= FALSE))
+
+fig
+```
+Hover on the bar to display the label
+
+```{r}
+df[["weapon.generalized"]] <- NA
+df$weapon.generalized[df$Weapon.Used.Cd >= 100 & df$Weapon.Used.Cd < 200] <- "Firearm"
+df$weapon.generalized[df$Weapon.Used.Cd >= 200 & df$Weapon.Used.Cd < 300] <- "Sharp Object"
+df$weapon.generalized[df$Weapon.Used.Cd >= 300 & df$Weapon.Used.Cd < 400] <- "Blunt Object"
+df$weapon.generalized[df$Weapon.Used.Cd >= 400 & df$Weapon.Used.Cd < 500] <- "Physical"
+df$weapon.generalized[df$Weapon.Used.Cd >= 500 & df$Weapon.Used.Cd < 600] <- "Other/Unknown Weapon"
+df$weapon.generalized[df$Weapon.Used.Cd == 511] <- "Treat"
+df$weapon.generalized[df$Weapon.Used.Cd == 501] <- "Treat"
+df$weapon.generalized[df$Weapon.Used.Cd == 515] <- "Physical"
+```
+
+```{r}
+weapon.used <- df %>%
+  group_by(weapon.generalized) %>%
+  summarize(count = n())
+print(weapon.used)
+```
+
+```{r}
+fig <- plot_ly(weapon.used, labels=~weapon.generalized, values=~count, type='pie')
+fig <- fig %>% layout(title = 'Weapon Used',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+```
+
+```{r}
+df[['Time.h']] = ((df$TIME.OCC - df$TIME.OCC %% 100) / 100) %% 24
+fig <- plot_ly(x = ~df$Time.h, type = "histogram")
+fig <- fig %>% layout(title = 'Time occurence (In hours)',
+         xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = TRUE),
+         yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+fig
+```
+
+
+```{r}
+M <- df$Time.h[df$Vict.Sex == 'Male']
+F <- df$Time.h[df$Vict.Sex == 'Female']
+O <- df$Time.h[df$Vict.Sex == 'Others']
+
+fig <- plot_ly(alpha = 0.6) %>%
+  add_histogram(x = ~M, name = 'Male') %>%
+  add_histogram(x = ~F, name = 'Female') %>%
+  add_histogram(x = ~O, name = 'Others') %>%
+  layout(barmode = "overlay",
+         title = "Distribution of time by Victim Sex",
+         xaxis = list(title = "Time in hour"),
+         yaxis = list(title = "Count"))
+
+fig
+```
+
+```{r}
+library('dplyr')
+loc = df[df$LAT != 0,c('LAT', 'LON')]
+loc
+```
+
+```{r}
+library('ggplot2')
+library('sf')
+
+gjson <-"./los-angeles-ca_.geojson"
+border <- st_read(gjson)
+
+ggplot() +
+  geom_sf(data = border) +
+  geom_point(data=loc, aes(x=LON, y=LAT), size=0.1, alpha=0.025, color='red') + 
+  geom_sf(data = border, fill=NA) +
+  
+  theme_minimal() +
+  labs(title = "Map of Crime Locations in Los Angeles", x="Latitude", y="Longitude")
+```
+

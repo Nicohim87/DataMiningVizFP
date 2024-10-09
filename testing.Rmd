@@ -1,0 +1,23 @@
+---
+title: "testing"
+author: "Nico Himawan"
+date: "2024-06-04"
+output: html_document
+---
+
+```{r}
+library(sf)
+setwd("D:/BINUS/Semester4/DataMiningVisualization/FinalProject")
+gjson <-"D:/BINUS/Semester4/DataMiningVisualization/FinalProject/los-angeles-ca_.geojson"
+border <- st_read(gjson)
+```
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(leaflet)
+library(ggplot2)
+```
+
+```{r}
+```
+
